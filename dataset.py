@@ -1,23 +1,36 @@
 import pathlib
 import re
+
+import numpy as np
 import pandas as pd
+from scipy import spatial
 from sklearn.preprocessing import QuantileTransformer
 
 
 class UserFactory:
 
-    def __init__(self, users: pd.DataFrame):
+    def __init__(self, users: pd.DataFrame, node_coordinates: np.array):
         self.users = users
+        self.node_coordinates = node_coordinates
+        self.kd_tree = spatial.KDTree(node_coordinates)
 
     def get_position(self, timestamp: float):
         filtered_users = self.users[:self.users['start'].searchsorted(timestamp, side='left')]
         filtered_users = filtered_users[filtered_users['end'] >= timestamp]
         return filtered_users
 
+    def get_workload(self, timestamp: float):
+        user_coordinates = self.get_position(timestamp)[['lat', 'long']].to_numpy()
+        node_workload = [self.kd_tree.query(user)[1] for user in user_coordinates]
+        node_ids, value_counts = np.unique(node_workload, return_counts=True)
+        result = [0] * len(self.node_coordinates)
+        for node_id, value_count in zip(node_ids, value_counts):
+            result[node_id] = value_count
+        return result
 
 class CabspottingUserFactory(UserFactory):
 
-    def __init__(self, dataset_dir: str):
+    def __init__(self, dataset_dir: str, node_coordinates: np.array):
         self.dataset_dir = pathlib.Path(dataset_dir)
         cabs_df = pd.read_csv(self.dataset_dir.joinpath("_cabs.txt"), header=None)
         cabs_df.columns = ['row']
@@ -44,12 +57,12 @@ class CabspottingUserFactory(UserFactory):
         for col in ['start', 'end']:
             users[col] = (users[col] - min_time) / (max_time - min_time)
         users = users.sort_values(['start', 'end'])
-        super().__init__(users)
+        super().__init__(users, node_coordinates)
 
 
 class TDriveUserFactory(UserFactory):
 
-    def __init__(self, dataset_dir: str):
+    def __init__(self, dataset_dir: str, node_coordinates: np.array):
         self.dataset_dir = pathlib.Path(dataset_dir)
         cabs_info = []
         for i in range(1, 10357):
@@ -78,12 +91,12 @@ class TDriveUserFactory(UserFactory):
         for col in ['start', 'end']:
             users[col] = (users[col] - min_time) / (max_time - min_time)
         users = users.sort_values(['start', 'end'])
-        super().__init__(users)
+        super().__init__(users, node_coordinates)
 
 
 class TelecomUserFactory(UserFactory):
 
-    def __init__(self, dataset_dir: str):
+    def __init__(self, dataset_dir: str, node_coordinates: np.array):
         self.dataset_dir = pathlib.Path(dataset_dir)
         users = pd.read_excel(self.dataset_dir.joinpath("data_6.1~6.15.xlsx"),
                               usecols=['start time', 'end time', 'latitude', 'longitude', 'user id'],
@@ -103,21 +116,4 @@ class TelecomUserFactory(UserFactory):
         scaler = QuantileTransformer()
         users[cols] = scaler.fit_transform(users[cols])
         users = users.sort_values(['start', 'end'])
-        super().__init__(users)
-
-
-if __name__ == '__main__':
-    n = 10000
-    user_factory = CabspottingUserFactory("cabspottingdata")
-    for t in range(1, n):
-        users = user_factory.get_position(t/n)
-        assert len(users) > 0
-    user_factory = TDriveUserFactory("tdrive")
-    for t in range(1, n):
-        users = user_factory.get_position(t/n)
-        assert len(users) > 0
-    user_factory = TelecomUserFactory("telecom")
-    for t in range(1, n):
-        users = user_factory.get_position(t/n)
-        assert len(users) > 0
-    pass
+        super().__init__(users, node_coordinates)
