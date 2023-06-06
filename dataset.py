@@ -23,10 +23,11 @@ class UserFactory:
         user_coordinates = self.get_position(timestamp)[['lat', 'long']].to_numpy()
         node_workload = [self.kd_tree.query(user)[1] for user in user_coordinates]
         node_ids, value_counts = np.unique(node_workload, return_counts=True)
-        result = [0] * len(self.node_coordinates)
+        result = np.array([0] * len(self.node_coordinates))
         for node_id, value_count in zip(node_ids, value_counts):
             result[node_id] = value_count
         return result
+
 
 class CabspottingUserFactory(UserFactory):
 
@@ -117,3 +118,25 @@ class TelecomUserFactory(UserFactory):
         users[cols] = scaler.fit_transform(users[cols])
         users = users.sort_values(['start', 'end'])
         super().__init__(users, node_coordinates)
+
+if __name__ == '__main__':
+    n = 1000
+    node_coordinates = np.array([
+        [0.25, 0.25],
+        [0.25, 0.75],
+        [0.75, 0.25],
+        [0.75, 0.75],
+    ])
+    user_factory = CabspottingUserFactory("cabspottingdata", node_coordinates)
+    a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
+    print(min(a))
+    print(max(a))
+    user_factory = TDriveUserFactory("tdrive", node_coordinates)
+    a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
+    print(min(a))
+    print(max(a))
+    user_factory = TelecomUserFactory("telecom", node_coordinates)
+    a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
+    print(min(a))
+    print(max(a))
+    pass

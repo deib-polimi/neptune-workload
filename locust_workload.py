@@ -1,10 +1,5 @@
-import argparse
-import math
-import time
-
 import numpy as np
 from locust import TaskSet, task, HttpUser, constant, LoadTestShape, events
-
 from dataset import CabspottingUserFactory, TelecomUserFactory, TDriveUserFactory, UserFactory
 
 json_data = {
@@ -25,12 +20,25 @@ json_data = {
     'graph_bfs': {'size': 30000},
 }
 
-nodes_address = [
-    "https://www.google.com",
-    "https://www.amazon.com",
-    "https://www.microsoft.com",
-    "https://www.facebook.com",
-]
+# TODO: Dividere il workload su molte funzioni
+# TODO: mettere il constraint del budget
+import kubernetes as k
+
+k.config.load_incluster_config()
+v1 = k.client.CoreV1Api()
+w = k.watch.Watch()
+
+
+def get_dispatcher_addresses():
+    addresses = [pod.status.pod_ip for pod in v1.list_namespaced_pod(namespace="default").items if
+                 "dispatcher" in pod.metadata.name]
+    return addresses
+
+
+# If using kubernetes
+nodes_address = get_dispatcher_addresses()
+# Otherwise put addresses
+# nodes_adress = ["https://www.google.com"]
 
 node_coordinates = np.array([
     [0.25, 0.25],
@@ -39,21 +47,22 @@ node_coordinates = np.array([
     [0.75, 0.75],
 ])
 
+workload_distribution = [0.25] * len(nodes_address)
+
+
 class UserTasks(TaskSet):
     mode = "network"
     req_session = 5
     counter = 0
 
     @task
-    def get_root(self):
-        if self.mode == "multi":
-            pass
-        else:
-            self.client.post(f"/function/{self.mode}", json=json_data[self.mode])
-            self.counter = self.counter + 1
-            time.sleep(0.1)
-            if (self.counter % self.req_session) == 0:
-                self.client.close()
+    def request(self):
+        global workload_distribution
+        node = nodes_address[np.random.choice(range(len(nodes_address)), p=workload_distribution)]
+        self.client.post(f"http://{node}:8080/function/openfaas-fn/{self.mode}", json=json_data[self.mode])
+        self.counter = self.counter + 1
+        if (self.counter % self.req_session) == 0:
+            self.client.close()
 
 
 class WebsiteUser(HttpUser):
@@ -66,11 +75,14 @@ class CustomShape(LoadTestShape):
     user_factory: UserFactory
 
     def tick(self):
+        global workload_distribution
         current_time = round(self.get_run_time())
-
         if current_time < self.time_limit:
-            users = sum(self.user_factory.get_workload(current_time/self.time_limit))
-            return round(users), 1
+            users = self.user_factory.get_workload(current_time / self.time_limit)
+            n_users = sum(users)
+            workload_distribution = users / n_users
+            print(workload_distribution)
+            return round(n_users), 1
         else:
             return None
 
@@ -95,3 +107,10 @@ def _(parser):
         raise Exception(f"not valid workload {args_dict['workload']}")
     UserTasks.mode = args_dict['mode']
     UserTasks.req_session = args_dict['req_session']
+
+
+@events.request.add_listener
+def my_request_handler(request_type, name, response_time, response_length, response,
+                       context, exception, start_time, url, **kwargs):
+    if exception:
+        print(f"Request to {name} with url {url} failed with exception {exception}")
