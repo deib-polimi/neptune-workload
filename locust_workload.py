@@ -22,6 +22,8 @@ json_data = {
 
 # TODO: Dividere il workload su molte funzioni
 # TODO: mettere il constraint del budget
+# TODO: check coordinate criticality
+# TODO: verificare i pesi dei constraints
 import kubernetes as k
 
 k.config.load_incluster_config()
@@ -47,26 +49,38 @@ node_coordinates = np.array([
     [0.75, 0.75],
 ])
 
-workload_distribution = [0.25] * len(nodes_address)
+functions = [
+    "compression",
+    "dynamic_html",
+    "graph_bfs",
+    "graph_mst",
+    "thumbnailer",
+    "video_processing"
+]
+functions_weights = np.array([
+    5, 5, 1, 5, 5, 0.02
+])
+functions_weights = functions_weights / sum(functions_weights)
+
+workload_distribution = np.ones(shape=(len(nodes_address), len(functions_weights)))
+workload_distribution = workload_distribution / sum(workload_distribution)
 
 
 class UserTasks(TaskSet):
-    mode = "network"
-    req_session = 5
-    counter = 0
 
     @task
     def request(self):
         global workload_distribution
-        node = nodes_address[np.random.choice(range(len(nodes_address)), p=workload_distribution)]
-        self.client.post(f"http://{node}:8080/function/openfaas-fn/{self.mode}", json=json_data[self.mode])
-        self.counter = self.counter + 1
-        if (self.counter % self.req_session) == 0:
-            self.client.close()
+        node_id = np.random.choice(range(len(nodes_address)), p=workload_distribution.sum(axis=1))
+        function_id = np.random.choice(range(len(functions)),
+                                       p=workload_distribution[node_id] / workload_distribution[node_id].sum())
+        node = nodes_address[node_id]
+        function = functions[function_id]
+        self.client.post(f"http://{node}:8080/function/openfaas-fn/{function.replace('_', '-')}", json=json_data[function])
 
 
 class WebsiteUser(HttpUser):
-    wait_time = constant(0.8)
+    wait_time = constant(1)
     tasks = [UserTasks]
 
 
@@ -78,31 +92,28 @@ class CustomShape(LoadTestShape):
         global workload_distribution
         current_time = round(self.get_run_time())
         if current_time < self.time_limit:
-            users = self.user_factory.get_workload(current_time / self.time_limit)
-            n_users = sum(users)
+            users = self.user_factory.get_user_workload(current_time / self.time_limit)
+            n_users = users.sum()
             workload_distribution = users / n_users
-            print(workload_distribution)
-            return round(n_users), 1
+            return round(n_users/20), 1
         else:
             return None
 
 
 @events.init_command_line_parser.add_listener
 def _(parser):
-    parser.add_argument("--mode", default="network", type=str)
-    parser.add_argument("--duration", default=1200, type=int)
-    parser.add_argument("--req_session", default=5, type=int)
+    parser.add_argument("--duration", default=300, type=int)
     parser.add_argument("--workload", type=str)
     args_dict = vars(parser.parse_args())
     print(args_dict)
     CustomShape.time_limit = args_dict['duration']
 
     if args_dict['workload'] == "cabspotting":
-        CustomShape.user_factory = CabspottingUserFactory("cabspottingdata", node_coordinates)
+        CustomShape.user_factory = CabspottingUserFactory("cabspottingdata", node_coordinates, functions_weights)
     elif args_dict['workload'] == "tdrive":
-        CustomShape.user_factory = TDriveUserFactory("tdrive", node_coordinates)
+        CustomShape.user_factory = TDriveUserFactory("tdrive", node_coordinates, functions_weights)
     elif args_dict['workload'] == "telecom":
-        CustomShape.user_factory = TelecomUserFactory("telecom", node_coordinates)
+        CustomShape.user_factory = TelecomUserFactory("telecom", node_coordinates, functions_weights)
     else:
         raise Exception(f"not valid workload {args_dict['workload']}")
     UserTasks.mode = args_dict['mode']

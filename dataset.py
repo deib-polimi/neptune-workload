@@ -9,15 +9,26 @@ from sklearn.preprocessing import QuantileTransformer
 
 class UserFactory:
 
-    def __init__(self, users: pd.DataFrame, node_coordinates: np.array):
+    def __init__(self, users: pd.DataFrame, node_coordinates: np.array, functions: np.array):
         self.users = users
+        self.functions = functions
+        self.user_function_assignment = {}
         self.node_coordinates = node_coordinates
         self.kd_tree = spatial.KDTree(node_coordinates)
 
     def get_position(self, timestamp: float):
         filtered_users = self.users[:self.users['start'].searchsorted(timestamp, side='left')]
         filtered_users = filtered_users[filtered_users['end'] >= timestamp]
+        filtered_users['function'] = filtered_users['id'].map(lambda x: self.get_user_function(x))
         return filtered_users
+
+    def get_user_function(self, user_id: int):
+        if user_id not in self.user_function_assignment:
+            self.user_function_assignment[user_id] = np.random.choice(
+                a=range(len(self.functions)),
+                p=self.functions,
+            )
+        return self.user_function_assignment[user_id]
 
     def get_workload(self, timestamp: float):
         user_coordinates = self.get_position(timestamp)[['lat', 'long']].to_numpy()
@@ -28,10 +39,22 @@ class UserFactory:
             result[node_id] = value_count
         return result
 
+    def get_user_workload(self, timestamp: float):
+        df = self.get_position(timestamp)
+        function_dfs = [y for x, y in df.groupby('function', as_index=False)]
+        result = np.zeros(shape=(len(self.node_coordinates), len(self.functions)))
+        for function_df in function_dfs:
+            function = function_df['function'].values[0]
+            user_coordinates = function_df[['lat', 'long']].to_numpy()
+            node_workload = [self.kd_tree.query(user)[1] for user in user_coordinates]
+            node_ids, value_counts = np.unique(node_workload, return_counts=True)
+            for node_id, value_count in zip(node_ids, value_counts):
+                result[node_id][function] = value_count
+        return result
 
 class CabspottingUserFactory(UserFactory):
 
-    def __init__(self, dataset_dir: str, node_coordinates: np.array):
+    def __init__(self, dataset_dir: str, node_coordinates: np.array, functions: np.array):
         self.dataset_dir = pathlib.Path(dataset_dir)
         cabs_df = pd.read_csv(self.dataset_dir.joinpath("_cabs.txt"), header=None)
         cabs_df.columns = ['row']
@@ -58,12 +81,12 @@ class CabspottingUserFactory(UserFactory):
         for col in ['start', 'end']:
             users[col] = (users[col] - min_time) / (max_time - min_time)
         users = users.sort_values(['start', 'end'])
-        super().__init__(users, node_coordinates)
+        super().__init__(users, node_coordinates, functions)
 
 
 class TDriveUserFactory(UserFactory):
 
-    def __init__(self, dataset_dir: str, node_coordinates: np.array):
+    def __init__(self, dataset_dir: str, node_coordinates: np.array, functions: np.array):
         self.dataset_dir = pathlib.Path(dataset_dir)
         cabs_info = []
         for i in range(1, 10357):
@@ -92,12 +115,12 @@ class TDriveUserFactory(UserFactory):
         for col in ['start', 'end']:
             users[col] = (users[col] - min_time) / (max_time - min_time)
         users = users.sort_values(['start', 'end'])
-        super().__init__(users, node_coordinates)
+        super().__init__(users, node_coordinates, functions)
 
 
 class TelecomUserFactory(UserFactory):
 
-    def __init__(self, dataset_dir: str, node_coordinates: np.array):
+    def __init__(self, dataset_dir: str, node_coordinates: np.array, functions: np.array):
         self.dataset_dir = pathlib.Path(dataset_dir)
         users = pd.read_excel(self.dataset_dir.joinpath("data_6.1~6.15.xlsx"),
                               usecols=['start time', 'end time', 'latitude', 'longitude', 'user id'],
@@ -117,7 +140,8 @@ class TelecomUserFactory(UserFactory):
         scaler = QuantileTransformer()
         users[cols] = scaler.fit_transform(users[cols])
         users = users.sort_values(['start', 'end'])
-        super().__init__(users, node_coordinates)
+        super().__init__(users, node_coordinates, functions)
+
 
 if __name__ == '__main__':
     n = 1000
@@ -127,16 +151,20 @@ if __name__ == '__main__':
         [0.75, 0.25],
         [0.75, 0.75],
     ])
-    user_factory = CabspottingUserFactory("cabspottingdata", node_coordinates)
-    a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
-    print(min(a))
-    print(max(a))
-    user_factory = TDriveUserFactory("tdrive", node_coordinates)
-    a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
-    print(min(a))
-    print(max(a))
-    user_factory = TelecomUserFactory("telecom", node_coordinates)
-    a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
-    print(min(a))
-    print(max(a))
-    pass
+    functions = np.array([
+        1, 1, 1, 1, 1, 1, 1, 0.1
+    ])
+    functions = functions / sum(functions)
+    user_factory = CabspottingUserFactory("cabspottingdata", node_coordinates, functions=functions)
+    # a = [sum(user_factory.get_workload(t / n)) for t in range(1, n)]
+    # print(min(a))
+    # print(max(a))
+    # user_factory = TDriveUserFactory("tdrive", node_coordinates)
+    # a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
+    # print(min(a))
+    # print(max(a))
+    # user_factory = TelecomUserFactory("telecom", node_coordinates)
+    # a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
+    # print(min(a))
+    # print(max(a))
+    # pass
