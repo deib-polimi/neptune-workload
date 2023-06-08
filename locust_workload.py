@@ -20,10 +20,6 @@ json_data = {
     'graph_bfs': {'size': 30000},
 }
 
-# TODO: Dividere il workload su molte funzioni
-# TODO: mettere il constraint del budget
-# TODO: check coordinate criticality
-# TODO: verificare i pesi dei constraints
 import kubernetes as k
 
 k.config.load_incluster_config()
