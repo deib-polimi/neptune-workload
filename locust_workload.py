@@ -91,14 +91,14 @@ class CustomShape(LoadTestShape):
             users = self.user_factory.get_user_workload(current_time / self.time_limit)
             n_users = users.sum()
             workload_distribution = users / n_users
-            return round(n_users/20), 1
+            return round(n_users), 1
         else:
             return None
 
 
 @events.init_command_line_parser.add_listener
 def _(parser):
-    parser.add_argument("--duration", default=300, type=int)
+    parser.add_argument("--duration", default=1800, type=int)
     parser.add_argument("--workload", type=str)
     args_dict = vars(parser.parse_args())
     print(args_dict)

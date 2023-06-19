@@ -9,12 +9,13 @@ from sklearn.preprocessing import QuantileTransformer
 
 class UserFactory:
 
-    def __init__(self, users: pd.DataFrame, node_coordinates: np.array, functions: np.array):
+    def __init__(self, users: pd.DataFrame, node_coordinates: np.array, functions: np.array, normalization_factor: int):
         self.users = users
         self.functions = functions
         self.user_function_assignment = {}
         self.node_coordinates = node_coordinates
         self.kd_tree = spatial.KDTree(node_coordinates)
+        self.normalization_factor = normalization_factor
 
     def get_position(self, timestamp: float):
         filtered_users = self.users[:self.users['start'].searchsorted(timestamp, side='left')]
@@ -49,7 +50,7 @@ class UserFactory:
             node_workload = [self.kd_tree.query(user)[1] for user in user_coordinates]
             node_ids, value_counts = np.unique(node_workload, return_counts=True)
             for node_id, value_count in zip(node_ids, value_counts):
-                result[node_id][function] = value_count
+                result[node_id][function] = value_count / self.normalization_factor
         return result
 
 class CabspottingUserFactory(UserFactory):
@@ -81,7 +82,7 @@ class CabspottingUserFactory(UserFactory):
         for col in ['start', 'end']:
             users[col] = (users[col] - min_time) / (max_time - min_time)
         users = users.sort_values(['start', 'end'])
-        super().__init__(users, node_coordinates, functions)
+        super().__init__(users, node_coordinates, functions, 20)
 
 
 class TDriveUserFactory(UserFactory):
@@ -115,7 +116,7 @@ class TDriveUserFactory(UserFactory):
         for col in ['start', 'end']:
             users[col] = (users[col] - min_time) / (max_time - min_time)
         users = users.sort_values(['start', 'end'])
-        super().__init__(users, node_coordinates, functions)
+        super().__init__(users, node_coordinates, functions, 400)
 
 
 class TelecomUserFactory(UserFactory):
@@ -140,7 +141,7 @@ class TelecomUserFactory(UserFactory):
         scaler = QuantileTransformer()
         users[cols] = scaler.fit_transform(users[cols])
         users = users.sort_values(['start', 'end'])
-        super().__init__(users, node_coordinates, functions)
+        super().__init__(users, node_coordinates, functions, 60)
 
 
 if __name__ == '__main__':

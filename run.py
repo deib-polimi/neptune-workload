@@ -38,31 +38,19 @@ def reset():
     cur.execute("delete from resource")
     conn.commit()
 
-def run_exp(run, run_id):
-    reset()
-    host = f"http://{run}.openfaas-fn.svc.cluster.local"
-    mode = f"{run.replace('-', '_')}"
-    if mode == "video_processing" or mode == "image_recognition":
-        users = 15
-    elif mode == "dynamic_html" or mode == "compression" or mode == "thumbnailer":
-        users = 50
-    else:
-        users = 25
-    command = f"locust -f workload.py --headless --host {host} --duration 1200 --mode {mode} --period 1200 --start 60 --min_users 1 --max_users {users}"
-    os.system(command)
-    time.sleep(120)
-    save(f"{run}_{run_id}")
-
-runs = [
-    "compression",
-    "dynamic-html",
-    "graph-bfs",
-    "graph-mst",
-    "pagerank",
-    "thumbnailer",
-    "video-processing"
+workloads = [
+    "cabspotting",
+    "tdrive",
+    "telecom",
 ]
 
-for run in runs:
-    for run_id in range(5):
-        run_exp(run, run_id)
+def run_exp(workload, run_id):
+    reset()
+    command = f"locust -f locust_workload.py --headless --host www.google.com --duration 1800 --workload {workload}"
+    os.system(command)
+    time.sleep(120)
+    save(f"{workload}_{run_id}")
+
+for workload in workloads:
+    for run_id in range(3):
+        run_exp(workload, run_id)
