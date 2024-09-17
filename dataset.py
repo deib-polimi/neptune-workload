@@ -52,6 +52,16 @@ class UserFactory:
             for node_id, value_count in zip(node_ids, value_counts):
                 result[node_id][function] = value_count / self.normalization_factor
         return result
+    
+    def get_avg_user_workload_in_interval(self, begin_ts: float, end_ts: float, delta=0.01):
+        result = None
+        t_samples = range(int(begin_ts/delta), int(end_ts/delta))
+        for i in t_samples:
+            try:
+                result += self.get_user_workload(i*delta)/len(t_samples)
+            except:
+                result = self.get_user_workload(i*delta)/len(t_samples)
+        return result
 
 class CabspottingUserFactory(UserFactory):
 
@@ -145,6 +155,7 @@ class TelecomUserFactory(UserFactory):
 
 
 if __name__ == '__main__':
+    np.random.seed(0)
     n = 1000
     node_coordinates = np.array([
         [0.25, 0.25],
@@ -154,16 +165,15 @@ if __name__ == '__main__':
     ])
     functions = np.array([
         1, 1, 1, 1, 1, 1, 1, 0.1
-    ])
+    ]) # probability weights 
     functions = functions / sum(functions)
-    user_factory = CabspottingUserFactory("cabspottingdata", node_coordinates, functions=functions)
+    #user_factory = CabspottingUserFactory("cabspottingdata", node_coordinates, functions=functions)
     # a = [sum(user_factory.get_workload(t / n)) for t in range(1, n)]
     # print(min(a))
     # print(max(a))
-    # user_factory = TDriveUserFactory("tdrive", node_coordinates)
-    # a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
-    # print(min(a))
-    # print(max(a))
+    user_factory = TDriveUserFactory("tdrive", node_coordinates, functions)
+    
+    print(user_factory.get_avg_user_workload_in_interval(0.1, 0.2, 0.01))
     # user_factory = TelecomUserFactory("telecom", node_coordinates)
     # a = [sum(user_factory.get_workload(t/n)) for t in range(1, n)]
     # print(min(a))
